@@ -9,7 +9,7 @@ export function branchCommand(name?: string, options?: { list?: boolean }) {
       if (b === head.branch) {
         console.log(chalk.green(`* ${b}`));
       } else {
-        console.log(`  ${b}`);
+        console.log(chalk.gray(`  ${b}`));
       }
     });
     return;

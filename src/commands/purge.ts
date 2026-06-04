@@ -34,12 +34,12 @@ export async function purgeCommand() {
     spinner.stop();
 
     if (deletedTables.length === 0 && deletedColumns.length === 0) {
-      console.log(chalk.green('No soft-deleted objects found.'));
+      console.log(chalk.green('✓ No soft-deleted objects found.'));
       await pool.end();
       return;
     }
 
-    console.log(chalk.yellow('Objects scheduled for permanent removal:'));
+    console.log(chalk.yellow('ℹ Objects scheduled for permanent removal:'));
     if (deletedTables.length > 0) {
       console.log(chalk.red('\nTables:'));
       deletedTables.forEach(t => console.log(chalk.red(`  ${t.table_name}`)));
@@ -61,7 +61,7 @@ export async function purgeCommand() {
     });
 
     if (!response.confirm) {
-      console.log('Purge aborted.');
+      console.log(chalk.gray('Purge aborted.'));
       await pool.end();
       return;
     }
@@ -73,7 +73,7 @@ export async function purgeCommand() {
         message: 'Type PURGE to confirm permanent deletion:'
       });
       if (doubleCheck.confirm !== 'PURGE') {
-        console.log('Purge aborted.');
+        console.log(chalk.gray('Purge aborted.'));
         await pool.end();
         return;
       }

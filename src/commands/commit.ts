@@ -39,7 +39,7 @@ export async function commitCommand(options: { message: string }) {
 
     if (changeset.changes.length === 0) {
       spinner.stop();
-      console.log("Nothing to commit.");
+      console.log(chalk.gray("Nothing to commit."));
       await pool.end();
       return;
     }
@@ -61,7 +61,7 @@ export async function commitCommand(options: { message: string }) {
       });
 
       if (!response.value) {
-        console.log('Commit aborted.');
+        console.log(chalk.gray('Commit aborted.'));
         await pool.end();
         return;
       }
@@ -89,17 +89,17 @@ export async function commitCommand(options: { message: string }) {
 
     setHead({ ...head, commit: commitHash });
 
-    console.log(chalk.green(`\nCommit ${commitHash} saved.`));
+    console.log(chalk.green(`\n✓ Commit ${commitHash} saved.`));
     const tableCount = Object.keys(newSnapshot.tables).length;
     const colCount = Object.values(newSnapshot.tables).reduce((sum, t) => sum + t.columns.length, 0);
     const idxCount = Object.values(newSnapshot.tables).reduce((sum, t) => sum + t.indexes.length, 0);
 
-    console.log(`${tableCount} tables · ${colCount} columns · ${idxCount} indexes`);
-    console.log(`Branch: ${head.branch}`);
+    console.log(chalk.gray(`${tableCount} tables · ${colCount} columns · ${idxCount} indexes`));
+    console.log(chalk.blue(`Branch: ${head.branch}`));
 
     await pool.end();
   } catch (e: any) {
-    spinner.fail(chalk.red(`Commit failed: ${e.message}`));
+    spinner.fail(chalk.red(`✗ Commit failed: ${e.message}`));
     process.exit(1);
   }
 }

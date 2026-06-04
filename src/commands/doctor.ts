@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import boxen from 'boxen';
 import { isInitialized, getHead, loadCommit, loadSnapshot, loadConfig } from '../core/store.js';
 import { createPool, getConnectionConfig, query } from '../core/connector.js';
 import { listBackups } from '../core/backup.js';
@@ -8,16 +9,16 @@ import { computeSchemaHash } from '../core/validator.js';
 import { loadIgnoreList } from '../core/ignore.js';
 
 export async function doctorCommand() {
-  console.log(chalk.bold('\nDBGit Doctor Report\n'));
-
   const repoInit = isInitialized();
-  console.log(`${repoInit ? chalk.green('✓') : chalk.red('✗')} Repository initialized`);
 
   if (!repoInit) {
-    console.log(chalk.yellow('\nRecommendation:'));
-    console.log('- Run \'dbgit init\' to initialize the repository');
+    console.log(chalk.red('\n✗ DBGit is not initialized in this directory.'));
+    console.log(chalk.yellow('Recommendation: Run \'dbgit init\' to initialize the repository.'));
     process.exit(1);
   }
+
+  let report = '';
+  report += `${chalk.green('✓')} Repository initialized\n`;
 
   const ignoreList = loadIgnoreList();
   const config = getConnectionConfig();
@@ -25,10 +26,10 @@ export async function doctorCommand() {
   let dbOk = false;
   try {
     await pool.query('SELECT 1');
-    console.log(`${chalk.green('✓')} Database connection: OK`);
+    report += `${chalk.green('✓')} Database connection: OK\n`;
     dbOk = true;
   } catch (e: any) {
-    console.log(`${chalk.red('✗')} Database connection: FAILED (${e.message})`);
+    report += `${chalk.red('✗')} Database connection: FAILED (${e.message})\n`;
   }
 
   let riskScore = 0;
@@ -47,7 +48,7 @@ export async function doctorCommand() {
         riskScore += 40;
       }
     }
-    console.log(`Schema Drift:      ${drift ? chalk.red('DETECTED') : chalk.green('None')}`);
+    report += `Schema Drift:      ${drift ? chalk.red('DETECTED') : chalk.green('None')}\n`;
 
     const liveSnapshot = await captureSnapshot(pool, ignoreList);
     let oldSnapshot = { tables: {}, capturedAt: '', schemaHash: '' };
@@ -55,7 +56,7 @@ export async function doctorCommand() {
       oldSnapshot = loadSnapshot(loadCommit(head.commit).snapshotHash);
     }
     const changeset = diffSnapshots(oldSnapshot, liveSnapshot);
-    console.log(`Untracked Changes: ${changeset.changes.length} changes`);
+    report += `Untracked Changes: ${changeset.changes.length} changes\n`;
     if (changeset.changes.some(c => c.isDestructive)) {
         riskScore += 30;
     }
@@ -63,18 +64,18 @@ export async function doctorCommand() {
     const softDeletedTables = await query(pool, "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '_dbgit_deleted_%'");
     const softDeletedColumns = await query(pool, "SELECT column_name FROM information_schema.columns WHERE column_name LIKE '_dbgit_deleted_%'");
     softDeletedCount = softDeletedTables.length + softDeletedColumns.length;
-    console.log(`Soft Deleted:      ${softDeletedCount > 0 ? chalk.yellow(softDeletedCount + ' objects') : chalk.green('None')}`);
+    report += `Soft Deleted:      ${softDeletedCount > 0 ? chalk.yellow(softDeletedCount + ' objects') : chalk.green('None')}\n`;
   }
 
   const backups = listBackups();
-  console.log(`Backups:           ${backups.length > 0 ? chalk.green('Available (' + backups.length + ')') : chalk.yellow('Missing')}`);
+  report += `Backups:           ${backups.length > 0 ? chalk.green('Available (' + backups.length + ')') : chalk.yellow('Missing')}\n`;
   if (backups.length === 0) riskScore += 20;
 
   if (head.commit) {
     const lastCommit = loadCommit(head.commit);
     const lastCommitDate = new Date(lastCommit.timestamp);
     const daysSinceLastCommit = (Date.now() - lastCommitDate.getTime()) / (1000 * 60 * 60 * 24);
-    console.log(`Last Commit:       ${chalk.blue(lastCommit.commitHash)} — ${lastCommit.message} (${Math.floor(daysSinceLastCommit)} days ago)`);
+    report += `Last Commit:       ${chalk.blue(lastCommit.commitHash)} — ${lastCommit.message} (${Math.floor(daysSinceLastCommit)} days ago)\n`;
     if (daysSinceLastCommit > 7) riskScore += 10;
   }
 
@@ -82,10 +83,12 @@ export async function doctorCommand() {
   if (riskScore > 30) safety = 'Medium';
   if (riskScore > 60) safety = 'Low';
 
-  console.log(`Rollback Safety:   ${safety === 'High' ? chalk.green(safety) : safety === 'Medium' ? chalk.yellow(safety) : chalk.red(safety)}`);
-  console.log(`Risk Score:        ${riskScore}/100`);
+  report += `Rollback Safety:   ${safety === 'High' ? chalk.green(safety) : safety === 'Medium' ? chalk.yellow(safety) : chalk.red(safety)}\n`;
+  report += `Risk Score:        ${riskScore}/100\n`;
 
-  console.log(chalk.bold('\nRecommendations:'));
+  console.log(boxen(report.trim(), { padding: 1, borderColor: 'cyan', title: 'DBGit Doctor Report' }));
+
+  console.log(chalk.bold('\nℹ Recommendations:'));
   const recommendations: string[] = [];
 
   if (drift) {
@@ -113,9 +116,9 @@ export async function doctorCommand() {
   }
 
   if (recommendations.length === 0) {
-    console.log(chalk.green('✓ Your repository is in great shape!'));
+    console.log(chalk.green('  ✓ Your repository is in great shape!'));
   } else {
-    recommendations.forEach(rec => console.log(rec));
+    recommendations.forEach(rec => console.log('  ' + rec));
   }
 
   console.log('');
