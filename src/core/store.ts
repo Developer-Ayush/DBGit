@@ -3,67 +3,79 @@ import path from 'path';
 import { Commit, Branch, HEAD } from '../types/commits.js';
 import { SchemaSnapshot } from '../types/schema.js';
 
-const DBGIT_DIR = path.join(process.cwd(), '.dbgit');
-const COMMITS_DIR = path.join(DBGIT_DIR, 'commits');
-const SNAPSHOTS_DIR = path.join(DBGIT_DIR, 'snapshots');
-const BRANCHES_DIR = path.join(DBGIT_DIR, 'branches');
-const BACKUPS_DIR = path.join(DBGIT_DIR, 'backups');
-const HEAD_FILE = path.join(DBGIT_DIR, 'HEAD');
-const CONFIG_FILE = path.join(DBGIT_DIR, 'config');
+let repoRoot = process.cwd();
+
+export function setRepoRoot(root: string): void {
+  repoRoot = root;
+}
+
+export function getRepoRoot(): string {
+  return repoRoot;
+}
+
+const getDbgitDir = () => path.join(getRepoRoot(), '.dbgit');
+const getCommitsDir = () => path.join(getDbgitDir(), 'commits');
+const getSnapshotsDir = () => path.join(getDbgitDir(), 'snapshots');
+const getBranchesDir = () => path.join(getDbgitDir(), 'branches');
+const getBackupsDirInternal = () => path.join(getDbgitDir(), 'backups');
+const getHeadFile = () => path.join(getDbgitDir(), 'HEAD');
+const getConfigFile = () => path.join(getDbgitDir(), 'config');
 
 export function initStore(): void {
-  if (!fs.existsSync(DBGIT_DIR)) fs.mkdirSync(DBGIT_DIR);
-  if (!fs.existsSync(COMMITS_DIR)) fs.mkdirSync(COMMITS_DIR);
-  if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR);
-  if (!fs.existsSync(BRANCHES_DIR)) fs.mkdirSync(BRANCHES_DIR);
-  if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
+  const dbgitDir = getDbgitDir();
+  if (!fs.existsSync(dbgitDir)) fs.mkdirSync(dbgitDir, { recursive: true });
+  if (!fs.existsSync(getCommitsDir())) fs.mkdirSync(getCommitsDir(), { recursive: true });
+  if (!fs.existsSync(getSnapshotsDir())) fs.mkdirSync(getSnapshotsDir(), { recursive: true });
+  if (!fs.existsSync(getBranchesDir())) fs.mkdirSync(getBranchesDir(), { recursive: true });
+  if (!fs.existsSync(getBackupsDirInternal())) fs.mkdirSync(getBackupsDirInternal(), { recursive: true });
 }
 
 export function isInitialized(): boolean {
-  return fs.existsSync(DBGIT_DIR);
+  return fs.existsSync(getDbgitDir());
 }
 
 export function saveCommit(commit: Commit): void {
-  fs.writeFileSync(path.join(COMMITS_DIR, `${commit.commitHash}.json`), JSON.stringify(commit, null, 2));
+  fs.writeFileSync(path.join(getCommitsDir(), `${commit.commitHash}.json`), JSON.stringify(commit, null, 2));
 }
 
 export function loadCommit(hash: string): Commit {
-  const filePath = path.join(COMMITS_DIR, `${hash}.json`);
+  const filePath = path.join(getCommitsDir(), `${hash}.json`);
   if (!fs.existsSync(filePath)) throw new Error(`Commit ${hash} not found.`);
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
 export function saveSnapshot(hash: string, snapshot: SchemaSnapshot): void {
-  fs.writeFileSync(path.join(SNAPSHOTS_DIR, `${hash}.json`), JSON.stringify(snapshot, null, 2));
+  fs.writeFileSync(path.join(getSnapshotsDir(), `${hash}.json`), JSON.stringify(snapshot, null, 2));
 }
 
 export function loadSnapshot(hash: string): SchemaSnapshot {
-  const filePath = path.join(SNAPSHOTS_DIR, `${hash}.json`);
+  const filePath = path.join(getSnapshotsDir(), `${hash}.json`);
   if (!fs.existsSync(filePath)) throw new Error(`Snapshot ${hash} not found.`);
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
 export function getHead(): HEAD {
-  if (!fs.existsSync(HEAD_FILE)) return { branch: 'main', commit: null };
-  return JSON.parse(fs.readFileSync(HEAD_FILE, 'utf-8'));
+  const headFile = getHeadFile();
+  if (!fs.existsSync(headFile)) return { branch: 'main', commit: null };
+  return JSON.parse(fs.readFileSync(headFile, 'utf-8'));
 }
 
 export function setHead(head: HEAD): void {
-  fs.writeFileSync(HEAD_FILE, JSON.stringify(head, null, 2));
+  fs.writeFileSync(getHeadFile(), JSON.stringify(head, null, 2));
 }
 
 export function saveBranch(branch: Branch): void {
-  fs.writeFileSync(path.join(BRANCHES_DIR, `${branch.name}.json`), JSON.stringify(branch, null, 2));
+  fs.writeFileSync(path.join(getBranchesDir(), `${branch.name}.json`), JSON.stringify(branch, null, 2));
 }
 
 export function loadBranch(name: string): Branch {
-  const filePath = path.join(BRANCHES_DIR, `${name}.json`);
+  const filePath = path.join(getBranchesDir(), `${name}.json`);
   if (!fs.existsSync(filePath)) throw new Error(`Branch ${name} not found.`);
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
 export function listBranches(): string[] {
-  return fs.readdirSync(BRANCHES_DIR).map(f => f.replace('.json', ''));
+  return fs.readdirSync(getBranchesDir()).map(f => f.replace('.json', ''));
 }
 
 export function listCommits(branchName: string | null, headCommitHash: string | null): Commit[] {
@@ -89,14 +101,15 @@ export function listCommits(branchName: string | null, headCommitHash: string | 
 }
 
 export function saveConfig(config: Record<string, string>): void {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  fs.writeFileSync(getConfigFile(), JSON.stringify(config, null, 2));
 }
 
 export function loadConfig(): Record<string, string> {
-  if (!fs.existsSync(CONFIG_FILE)) return {};
-  return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+  const configFile = getConfigFile();
+  if (!fs.existsSync(configFile)) return {};
+  return JSON.parse(fs.readFileSync(configFile, 'utf-8'));
 }
 
 export function getBackupsDir(): string {
-  return BACKUPS_DIR;
+  return getBackupsDirInternal();
 }

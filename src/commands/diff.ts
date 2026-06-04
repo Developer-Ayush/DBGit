@@ -28,7 +28,7 @@ export async function diffCommand() {
     spinner.stop();
 
     if (changeset.changes.length === 0) {
-      console.log("No changes since last commit.");
+      console.log(chalk.gray("No changes since last commit."));
       await pool.end();
       return;
     }
@@ -91,7 +91,7 @@ export async function diffCommand() {
     await pool.end();
   } catch (e: any) {
     if (spinner.isSpinning) spinner.stop();
-    console.error(chalk.red(`Diff failed: ${e.message}`));
+    console.error(chalk.red(`✗ Diff failed: ${e.message}`));
     process.exit(1);
   }
 }

@@ -1,0 +1,33 @@
+name: Bug Report
+description: File a bug report to help us improve DBGit
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the information below.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Run 'dbgit init'
+        2. ALTER TABLE ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DBGit Version
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true

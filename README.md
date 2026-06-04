@@ -1,141 +1,114 @@
 # DBGit
 
+Git for your database schema.
+
+**Branch. Diff. Commit. Rollback.**
+*Without writing migration scripts.*
+
 [![npm version](https://img.shields.io/npm/v/dbgit.svg)](https://www.npmjs.com/package/dbgit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)
 
-"Git for your database schema — branch, diff, commit, rollback."
+> ⚠ **BETA SOFTWARE**: DBGit is currently in beta. Always test against staging databases first. DBGit modifies database schemas. Maintain backups before production use.
 
-> ⚠ **BETA WARNING**: DBGit is currently in beta. While we strive for stability, please test thoroughly in a staging environment before using it on production databases.
+## What is DBGit?
 
-## Overview
+DBGit brings the power of version control to your PostgreSQL database schema. Instead of manually managing migration files, DBGit tracks the *state* of your schema, allowing you to move between versions as easily as you switch branches in Git.
 
-DBGit is a production-ready, open-source CLI tool designed to bring the power of version control to your PostgreSQL database schema. It allows you to snapshot your schema, track changes over time, branch out for new features, and safely rollback to previous states.
-
-## Installation
-
-```bash
-npm install -g dbgit
-```
+**Why doesn't PostgreSQL already have this?**
+DBGit fills the gap between code versioning and database management, solving common pains like accidental `ALTER TABLE` calls, broken migrations, and the "fear of rollback."
 
 ## Quick Start
 
 1. **Configure your database connection:**
-
-```bash
-export DATABASE_URL=postgres://user:pass@localhost:5432/mydb
-```
+   ```bash
+   export DATABASE_URL=postgres://user:pass@localhost:5432/mydb
+   ```
 
 2. **Initialize DBGit:**
+   ```bash
+   dbgit init
+   ```
+
+3. **See what changed (Drift Detection):**
+   ```bash
+   # Add a column in your DB
+   dbgit diff
+   ```
+
+4. **Commit your changes:**
+   ```bash
+   dbgit commit -m "add email column to users"
+   ```
+
+5. **Rollback safely:**
+   ```bash
+   dbgit rollback <commit-hash>
+   ```
+
+## Example Session
 
 ```bash
-dbgit init --mode dev
+$ dbgit diff
+  + column users.email character varying(255)
+
+$ dbgit commit -m "add user emails"
+✓ Commit a9f2d1b saved.
+12 tables · 84 columns · 15 indexes
+Branch: main
+
+$ dbgit rollback a9f2d1b
+┌ Rollback Risk: HIGH ────────────────┐
+│                                     │
+│   ⚠ DESTRUCTIVE CHANGES DETECTED   │
+│                                     │
+│   ✗ DROP_COLUMN: users.email        │
+│     Impact: 1842 non-null rows      │
+│                                     │
+└─────────────────────────────────────┘
+? Continue with destructive rollback? (y/N)
 ```
-
-3. **Make your first commit:**
-
-```bash
-dbgit commit -m "initial schema"
-```
-
-4. **Iterate on your schema:**
-
-```sql
-ALTER TABLE users ADD COLUMN email VARCHAR(255);
-```
-
-5. **See what changed:**
-
-```bash
-dbgit diff
-```
-
-6. **Commit the changes:**
-
-```bash
-dbgit commit -m "add email column to users"
-```
-
-7. **Rollback if needed:**
-
-```bash
-dbgit rollback <commit-hash> --safe
-```
-
-## Commands
-
-| Command | Description |
-| --- | --- |
-| `init [--mode dev\|prod] [--recover]` | Initialize a new DBGit repository. |
-| `commit -m <message>` | Snapshot the current database schema. |
-| `diff` | Show changes between the last commit and the live database. |
-| `log` | Show commit history. |
-| `rollback <hash> [--safe] [--force] [--dry-run] [--soft-delete]` | Restore schema to a specific commit (creates a new commit). |
-| `branch [name] [--list]` | Create or list branches. |
-| `checkout <ref>` | Switch branches or update HEAD to a specific commit. |
-| `purge` | Permanently remove soft-deleted objects (`_dbgit_deleted_*`). |
-| `doctor` | Check the health of your DBGit repository and database. |
-| `restore <hash> <table>` | Restore a specific table to its state in a previous commit. |
-| `merge <branch>` | Merge changes from another branch. |
-| `restore-backup <hash>` | Get instructions on how to restore a physical backup. |
-
-## Safety Model
-
-DBGit is built with safety as a first-class citizen:
-
-- **Schema Lock**: Uses PostgreSQL advisory locks to prevent concurrent schema operations.
-- **Drift Detection**: Automatically detects if the database schema has changed outside of DBGit and aborts potentially dangerous operations like `rollback`.
-- **Data Loss Protection**: In `prod` mode, destructive operations (like dropping tables or columns) require `--safe` which forces a `pg_dump` backup before proceeding.
-- **Transactions**: All schema changes are executed within a single transaction. If any part fails, the entire operation is rolled back.
-- **Soft Delete**: Use the `--soft-delete` flag during rollback to rename objects (e.g., `_dbgit_deleted_users`) instead of dropping them.
-
-## Rollback & Branch Semantics
-
-- **Rollback**: Follows `git revert` semantics. It does not move `HEAD` backwards or rewrite history. Instead, it creates a *new* commit that restores the schema to the target state.
-- **Checkout**: Safely switches the `HEAD` or current branch. It **does not** modify the live database schema. To change the schema, use `rollback`.
-- **Branches**: Light-weight pointers to commits, similar to Git.
 
 ## Architecture
 
-DBGit captures the logical state of your database (tables, columns, indexes, constraints, foreign keys) into JSON snapshots.
+DBGit uses a snapshot-based approach to track your schema state.
 
-```
-+-----------+       +-----------+       +-----------+
-|    CLI    | ----> | Commands  | ----> |   Core    |
-+-----------+       +-----------+       +-----------+
-                                              |
-                                              v
-                                     +-----------------+
-                                     |  PostgreSQL DB  |
-                                     +-----------------+
+```mermaid
+graph TD
+    A[Live Database] --> B[Snapshot Engine]
+    B --> C[Diff Engine]
+    C --> D[Commit Store]
+    D --> E[Rollback Generator]
+    E --> A
 ```
 
-## Configuration
+## Safety Model
 
-DBGit looks for connection details in the following order:
+DBGit is built for trust and reliability:
 
-1. `DATABASE_URL` environment variable
-2. `DBGIT_DATABASE_URL` environment variable
-3. `.dbgit/config` file
-4. Legacy `DBGIT_HOST`, `DBGIT_PORT`, etc. environment variables
+- **Transactions**: All operations run inside a `BEGIN/COMMIT` block. Failure triggers a full `ROLLBACK`.
+- **Drift Detection**: DBGit detects if the live database has changed outside of DBGit and aborts dangerous operations for safety.
+- **Impact Analysis**: Destructive operations (`DROP TABLE`, `DROP COLUMN`) show exact row counts and foreign key dependency warnings.
+- **Soft Delete**: Use `--soft-delete` to rename objects (e.g., `_dbgit_deleted_users_1700000000`) instead of dropping them.
+- **Backups**: In `prod` mode, destructive operations require `--safe` which forces a physical backup before proceeding.
 
-## .dbgitignore
+## Rollback & Checkout Semantics
 
-Create a `.dbgitignore` file to ignore specific tables using glob patterns:
-
-```text
-# Ignore temporary tables
-temp_*
-
-# Ignore audit logs
-audit_logs
-```
+- **Rollback**: Follows `git revert` semantics. It creates a *new* commit that restores the schema to a previous state, preserving history.
+- **Checkout**: Safely switches branches or HEAD. It **never** modifies the live database schema.
 
 ## Known Limitations
 
-- **PostgreSQL Only**: Currently only supports PostgreSQL.
-- **Rename Detection**: Column/Table renames are detected as a DROP + ADD.
-- **Public Schema**: Currently focused on the `public` schema.
+- **PostgreSQL Only**: Currently supports PostgreSQL (target version 12+).
+- **Rename Detection**: Renames are currently detected as a DROP + ADD.
+- **Public Schema**: Focuses on the `public` schema.
+
+## Roadmap
+
+- [ ] Support for multiple schemas
+- [ ] Rename detection improvements
+- [ ] Support for Views and Stored Procedures
+- [ ] CI/CD integration helpers
 
 ## License
 

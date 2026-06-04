@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import prompts from 'prompts';
 import crypto from 'crypto';
+import boxen from 'boxen';
 import { isInitialized, getHead, loadCommit, loadSnapshot, setHead, loadConfig, saveCommit, saveSnapshot, saveBranch, loadBranch } from '../core/store.js';
 import { createPool, getConnectionConfig, query } from '../core/connector.js';
 import { captureSnapshot } from '../core/snapshot.js';
@@ -54,24 +55,44 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
     const changeset = diffSnapshots(liveSnapshot, targetSnapshot);
 
     if (changeset.changes.length === 0) {
-      console.log("Database schema is already at target state.");
+      console.log(chalk.gray("ℹ Database schema is already at target state."));
       await pool.end();
       return;
     }
 
     if (changeset.hasDestructive) {
-      console.warn(chalk.yellow('\nDestructive changes required for rollback:'));
-      for (const change of changeset.changes.filter(c => c.isDestructive)) {
+      const destructiveChanges = changeset.changes.filter(c => c.isDestructive);
+      const allFks = Object.values(liveSnapshot.tables).flatMap(t => t.foreignKeys);
+
+      let impactReport = chalk.yellow('⚠ DESTRUCTIVE CHANGES DETECTED\n\n');
+
+      for (const change of destructiveChanges) {
         let impact = '';
+        let dependencies: string[] = [];
+
         if (change.type === ChangeType.DROP_TABLE) {
           const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM "${change.table}"`);
-          impact = `(${rows[0].count} rows)`;
+          impact = `${rows[0].count} rows`;
+          dependencies = allFks
+            .filter(fk => fk.targetTable === change.table)
+            .map(fk => `${fk.sourceTable}.${fk.sourceColumn}`);
         } else if (change.type === ChangeType.DROP_COLUMN) {
           const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM "${change.table}" WHERE "${change.objectName}" IS NOT NULL`);
-          impact = `(${rows[0].count} non-null rows)`;
+          impact = `${rows[0].count} non-null rows`;
+          dependencies = allFks
+            .filter(fk => fk.targetTable === change.table && fk.targetColumn === change.objectName)
+            .map(fk => `${fk.sourceTable}.${fk.sourceColumn}`);
         }
-        console.warn(chalk.red(`  ${change.type} ${change.table}${change.objectName ? '.' + change.objectName : ''} ${impact}`));
+
+        impactReport += chalk.red(`✗ ${change.type}: ${change.table}${change.objectName ? '.' + change.objectName : ''}\n`);
+        impactReport += chalk.gray(`  Impact: ${impact}\n`);
+        if (dependencies.length > 0) {
+          impactReport += chalk.red(`  Referenced by: ${dependencies.join(', ')}\n`);
+        }
+        impactReport += '\n';
       }
+
+      console.log(boxen(impactReport.trim(), { padding: 1, borderColor: 'red', title: 'Rollback Risk: HIGH' }));
 
       if (isProd) {
         if (!options.safe) {
@@ -87,7 +108,7 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
             initial: false
           });
           if (!response.value) {
-            console.log('Rollback aborted.');
+            console.log(chalk.gray('Rollback aborted.'));
             process.exit(1);
           }
         }
@@ -100,7 +121,7 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
           message: 'Type DESTROY DATA to continue:'
         });
         if (response.confirm !== 'DESTROY DATA') {
-          console.log('Rollback aborted.');
+          console.log(chalk.gray('Rollback aborted.'));
           process.exit(1);
         }
       }

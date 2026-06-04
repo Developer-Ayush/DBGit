@@ -64,10 +64,10 @@ export async function initCommand(options: { mode: string, recover: boolean }) {
       });
       setHead({ branch: 'main', commit: commitHash });
 
-      spinner.succeed(chalk.green('Recovered DBGit state from live database.'));
+      spinner.succeed(chalk.green('✓ Recovered DBGit state from live database.'));
       await pool.end();
     } catch (e: any) {
-      spinner.fail(chalk.red(`Recovery failed: ${e.message}`));
+      spinner.fail(chalk.red(`✗ Recovery failed: ${e.message}`));
       process.exit(1);
     }
   } else {
@@ -79,16 +79,16 @@ export async function initCommand(options: { mode: string, recover: boolean }) {
     });
     setHead({ branch: 'main', commit: null });
 
-    console.log(chalk.green('Initialized DBGit repository.'));
+    console.log(chalk.green('✓ Initialized empty DBGit repository.'));
   }
 
   if (config.connectionString) {
-    console.log(chalk.blue('Connected using connection string (details hidden for security)'));
+    console.log(chalk.blue('ℹ Connected using connection string (details hidden for security)'));
   } else {
-    console.log(chalk.blue(`Connected to: ${config.database}@${config.host}`));
+    console.log(chalk.blue(`ℹ Connected to: ${config.database}@${config.host}`));
   }
 
   if (options.mode === 'prod') {
-    console.warn(chalk.yellow('Production mode: destructive operations require --safe (for backups)'));
+    console.warn(chalk.yellow('⚠ Production mode: destructive operations require --safe (for backups)'));
   }
 }

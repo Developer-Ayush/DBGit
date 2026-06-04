@@ -1,51 +1,29 @@
 # Contributing to DBGit
 
-We love your input! We want to make contributing to DBGit as easy and transparent as possible.
+We love your input! We want to make contributing to DBGit as easy and transparent as possible, whether it's:
 
-## Development Setup
+- Reporting a bug
+- Discussing the current state of the code
+- Submitting a fix
+- Proposing new features
+- Becoming a maintainer
 
-```bash
-git clone https://github.com/YOUR_USERNAME/dbgit
-cd dbgit
-npm install
-npm run build
-npm test
-```
+## Development Process
 
-## Pull Request Process
+1. Fork the repo and create your branch from `main`.
+2. Install dependencies: `npm install`
+3. Make your changes.
+4. Run tests: `npm test`
+5. Ensure type safety: `npm run typecheck`
+6. Submit a Pull Request.
 
-1. Fork the repo and create your branch from `main`
-2. Run `npm test` — all tests must pass
-3. Run `npm run lint` — no lint errors
-4. Update README.md if you changed any commands
-5. Open a PR with a clear description
+## Coding Conventions
 
-## Commit Convention
-
-We use [Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` new feature
-- `fix:` bug fix
-- `docs:` documentation only
-- `test:` adding tests
-- `chore:` build/tooling changes
-
-## Reporting Bugs
-
-Open a GitHub Issue with:
-- DBGit version (`dbgit --version`)
-- PostgreSQL version
-- Node.js version
-- Steps to reproduce
-- Expected vs actual behavior
-
-## Code Style
-
-- TypeScript strict mode — no `any`
-- Descriptive variable names
-- Every exported function must have a JSDoc comment
-- Tests for every new feature
+- Use TypeScript for all new code.
+- Follow the existing architectural patterns (Commands -> Core -> Types).
+- Add tests for any new features or bug fixes.
+- Ensure CLI output remains consistent with the "Prisma + Git" aesthetic.
 
 ## License
 
-By contributing, you agree your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under its MIT License.

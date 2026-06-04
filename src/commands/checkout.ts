@@ -54,10 +54,13 @@ export async function checkoutCommand(ref: string) {
 
   setHead({ branch: targetBranchName, commit: targetCommitHash });
 
-  console.log(chalk.green(`Switched to ${targetBranchName ? "branch '" + targetBranchName + "'" : "commit " + targetCommitHash}`));
+  console.log(chalk.green(`✓ Switched to ${targetBranchName ? "branch '" + targetBranchName + "'" : "commit " + targetCommitHash}`));
   if (!targetBranchName) {
-    console.log(chalk.yellow(`HEAD is now detached at ${targetCommitHash}. You are not on a branch.`));
+    console.log(chalk.yellow(`ℹ HEAD is now detached at ${targetCommitHash}. You are not on a branch.`));
   }
+
+  console.log(chalk.yellow('⚠ Database schema unchanged.'));
+  console.log(chalk.gray('Use dbgit rollback to modify database state.'));
 
   await pool.end();
 }
