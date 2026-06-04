@@ -12,6 +12,7 @@ import { restoreCommand } from './commands/restore.js';
 import { mergeCommand } from './commands/merge.js';
 import { doctorCommand } from './commands/doctor.js';
 import { restoreBackupCommand } from './commands/restore-backup.js';
+import { purgeCommand } from './commands/purge.js';
 
 const program = new Command();
 
@@ -154,6 +155,18 @@ program
   .action((hash) => {
     try {
       restoreBackupCommand(hash);
+    } catch (e: any) {
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('purge')
+  .description('Permanently remove soft-deleted objects')
+  .action(async () => {
+    try {
+      await purgeCommand();
     } catch (e: any) {
       console.error(chalk.red(e.message));
       process.exit(1);

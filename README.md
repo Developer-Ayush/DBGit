@@ -6,11 +6,11 @@
 
 "Git for your database schema — branch, diff, commit, rollback."
 
+> ⚠ **BETA WARNING**: DBGit is currently in beta. While we strive for stability, please test thoroughly in a staging environment before using it on production databases.
+
 ## Overview
 
 DBGit is a production-ready, open-source CLI tool designed to bring the power of version control to your PostgreSQL database schema. It allows you to snapshot your schema, track changes over time, branch out for new features, and safely rollback to previous states.
-
-<!-- demo.gif -->
 
 ## Installation
 
@@ -23,15 +23,13 @@ npm install -g dbgit
 1. **Configure your database connection:**
 
 ```bash
-export DBGIT_DATABASE=mydb
-export DBGIT_USER=postgres
-export DBGIT_PASSWORD=secret
+export DATABASE_URL=postgres://user:pass@localhost:5432/mydb
 ```
 
 2. **Initialize DBGit:**
 
 ```bash
-dbgit init
+dbgit init --mode dev
 ```
 
 3. **Make your first commit:**
@@ -43,7 +41,6 @@ dbgit commit -m "initial schema"
 4. **Iterate on your schema:**
 
 ```sql
--- In psql or your favorite SQL client
 ALTER TABLE users ADD COLUMN email VARCHAR(255);
 ```
 
@@ -73,12 +70,13 @@ dbgit rollback <commit-hash> --safe
 | `commit -m <message>` | Snapshot the current database schema. |
 | `diff` | Show changes between the last commit and the live database. |
 | `log` | Show commit history. |
-| `rollback <hash> [--safe] [--force] [--dry-run] [--soft-delete]` | Restore schema to a specific commit. |
+| `rollback <hash> [--safe] [--force] [--dry-run] [--soft-delete]` | Restore schema to a specific commit (creates a new commit). |
 | `branch [name] [--list]` | Create or list branches. |
-| `checkout <ref>` | Switch branches or restore schema to a commit. |
+| `checkout <ref>` | Switch branches or update HEAD to a specific commit. |
+| `purge` | Permanently remove soft-deleted objects (`_dbgit_deleted_*`). |
+| `doctor` | Check the health of your DBGit repository and database. |
 | `restore <hash> <table>` | Restore a specific table to its state in a previous commit. |
 | `merge <branch>` | Merge changes from another branch. |
-| `doctor` | Check the health of your DBGit repository. |
 | `restore-backup <hash>` | Get instructions on how to restore a physical backup. |
 
 ## Safety Model
@@ -86,26 +84,20 @@ dbgit rollback <commit-hash> --safe
 DBGit is built with safety as a first-class citizen:
 
 - **Schema Lock**: Uses PostgreSQL advisory locks to prevent concurrent schema operations.
-- **Drift Detection**: Automatically detects if the database schema has changed outside of DBGit and aborts potentially dangerous operations.
-- **Data Loss Protection**: In `prod` mode, destructive operations (like dropping tables or columns) are blocked unless `--force` or `--safe` (which creates a backup) is used.
+- **Drift Detection**: Automatically detects if the database schema has changed outside of DBGit and aborts potentially dangerous operations like `rollback`.
+- **Data Loss Protection**: In `prod` mode, destructive operations (like dropping tables or columns) require `--safe` which forces a `pg_dump` backup before proceeding.
 - **Transactions**: All schema changes are executed within a single transaction. If any part fails, the entire operation is rolled back.
-- **Soft Delete**: Use the `--soft-delete` flag to rename objects instead of dropping them.
+- **Soft Delete**: Use the `--soft-delete` flag during rollback to rename objects (e.g., `_dbgit_deleted_users`) instead of dropping them.
 
-## Storage Layout
+## Rollback & Branch Semantics
 
-DBGit stores its state in a `.dbgit/` directory in your project root:
-
-```
-.dbgit/
-├── HEAD             # Current branch or commit
-├── config           # Repository configuration
-├── commits/         # Commit metadata (JSON)
-├── snapshots/       # Schema snapshots (JSON)
-├── branches/        # Branch definitions (JSON)
-└── backups/         # pg_dump backups (.sql)
-```
+- **Rollback**: Follows `git revert` semantics. It does not move `HEAD` backwards or rewrite history. Instead, it creates a *new* commit that restores the schema to the target state.
+- **Checkout**: Safely switches the `HEAD` or current branch. It **does not** modify the live database schema. To change the schema, use `rollback`.
+- **Branches**: Light-weight pointers to commits, similar to Git.
 
 ## Architecture
+
+DBGit captures the logical state of your database (tables, columns, indexes, constraints, foreign keys) into JSON snapshots.
 
 ```
 +-----------+       +-----------+       +-----------+
@@ -120,20 +112,16 @@ DBGit stores its state in a `.dbgit/` directory in your project root:
 
 ## Configuration
 
-DBGit can be configured via environment variables or the `.dbgit/config` file.
+DBGit looks for connection details in the following order:
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DBGIT_HOST` | `localhost` | Database host |
-| `DBGIT_PORT` | `5432` | Database port |
-| `DBGIT_DATABASE` | (Required) | Database name |
-| `DBGIT_USER` | (Required) | Database user |
-| `DBGIT_PASSWORD` | | Database password |
-| `DBGIT_SSL` | `false` | Use SSL connection |
+1. `DATABASE_URL` environment variable
+2. `DBGIT_DATABASE_URL` environment variable
+3. `.dbgit/config` file
+4. Legacy `DBGIT_HOST`, `DBGIT_PORT`, etc. environment variables
 
 ## .dbgitignore
 
-Create a `.dbgitignore` file to ignore specific tables:
+Create a `.dbgitignore` file to ignore specific tables using glob patterns:
 
 ```text
 # Ignore temporary tables
@@ -147,18 +135,7 @@ audit_logs
 
 - **PostgreSQL Only**: Currently only supports PostgreSQL.
 - **Rename Detection**: Column/Table renames are detected as a DROP + ADD.
-- **Schema**: Currently hardcoded to the `public` schema.
-
-## Roadmap
-
-- **Phase 1**: Core CLI and Schema Versioning (Done)
-- **Phase 2**: Multi-schema support & improved rename detection
-- **Phase 3**: Row-level diffing and data migrations
-- **Phase 4**: Remote synchronization (S3/Cloud)
-
-## Contributing
-
-Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+- **Public Schema**: Currently focused on the `public` schema.
 
 ## License
 

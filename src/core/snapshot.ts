@@ -70,13 +70,15 @@ export async function captureSnapshot(pool: pg.Pool, ignoreList: string[]): Prom
 
     tables[tableName] = {
       name: tableName,
-      columns: columns.map((c: any) => ({
-        name: c.column_name,
-        type: c.character_maximum_length ? `${c.data_type}(${c.character_maximum_length})` : c.data_type,
-        nullable: c.is_nullable === 'YES',
-        default: c.column_default,
-        isPrimaryKey: pkColumns.has(c.column_name)
-      })),
+      columns: columns
+        .filter((c: any) => !c.column_name.startsWith('_dbgit_deleted_'))
+        .map((c: any) => ({
+          name: c.column_name,
+          type: c.character_maximum_length ? `${c.data_type}(${c.character_maximum_length})` : c.data_type,
+          nullable: c.is_nullable === 'YES',
+          default: c.column_default,
+          isPrimaryKey: pkColumns.has(c.column_name)
+        })),
       indexes: indexes.map((i: any) => {
         // Extract columns from indexdef: "CREATE UNIQUE INDEX idx_name ON table USING btree (col1, col2)"
         const match = i.indexdef.match(/\((.*)\)/);

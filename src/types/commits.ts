@@ -6,6 +6,8 @@ export interface Commit {
   message: string;
   branch: string | null;
   schemaHash: string;
+  type?: 'commit' | 'rollback';
+  targetCommit?: string;
 }
 
 export interface Branch {

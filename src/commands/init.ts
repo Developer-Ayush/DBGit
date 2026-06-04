@@ -15,14 +15,24 @@ export async function initCommand(options: { mode: string, recover: boolean }) {
   initStore();
 
   const config = getConnectionConfig();
-  saveConfig({
+  const dbConfig: Record<string, string> = {
     DBGIT_MODE: options.mode,
-    DBGIT_HOST: config.host,
-    DBGIT_PORT: config.port.toString(),
-    DBGIT_DATABASE: config.database,
-    DBGIT_USER: config.user,
-    DBGIT_SSL: config.ssl.toString(),
-  });
+  };
+
+  if (config.connectionString) {
+    dbConfig.databaseUrl = config.connectionString;
+  } else {
+    dbConfig.DBGIT_HOST = config.host || 'localhost';
+    dbConfig.DBGIT_PORT = config.port?.toString() || '5432';
+    dbConfig.DBGIT_DATABASE = config.database || '';
+    dbConfig.DBGIT_USER = config.user || '';
+    dbConfig.DBGIT_SSL = config.ssl?.toString() || 'false';
+    if (config.password) {
+      dbConfig.DBGIT_PASSWORD = config.password;
+    }
+  }
+
+  saveConfig(dbConfig);
 
   if (options.recover) {
     const spinner = ora('Recovering state from live database...').start();
@@ -32,7 +42,7 @@ export async function initCommand(options: { mode: string, recover: boolean }) {
 
       const timestamp = new Date().toISOString();
       const message = "Recovered initial state";
-      const commitHash = crypto.createHash('sha256').update(message + timestamp + snapshot.schemaHash).digest('hex');
+      const commitHash = crypto.createHash('sha256').update(message + timestamp + snapshot.schemaHash).digest('hex').substring(0, 7);
 
       const commit: Commit = {
         commitHash,
@@ -72,8 +82,13 @@ export async function initCommand(options: { mode: string, recover: boolean }) {
     console.log(chalk.green('Initialized DBGit repository.'));
   }
 
-  console.log(chalk.blue(`Connected to: ${config.database}@${config.host}`));
+  if (config.connectionString) {
+    console.log(chalk.blue('Connected using connection string (details hidden for security)'));
+  } else {
+    console.log(chalk.blue(`Connected to: ${config.database}@${config.host}`));
+  }
+
   if (options.mode === 'prod') {
-    console.warn(chalk.yellow('Production mode: destructive operations require --force'));
+    console.warn(chalk.yellow('Production mode: destructive operations require --safe (for backups)'));
   }
 }

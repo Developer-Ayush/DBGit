@@ -1,6 +1,6 @@
 {
   "name": "dbgit",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "description": "Git for your database schema — branch, diff, commit, rollback.",
   "bin": {
     "dbgit": "./dist/cli.js"
@@ -10,6 +10,7 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
     "prepublishOnly": "npm run build"
   },

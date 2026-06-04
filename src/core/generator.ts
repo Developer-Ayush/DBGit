@@ -21,11 +21,6 @@ function generateChangeSQL(change: Change, inverse: boolean): string[] {
       const table = (inverse ? change.before : change.after) as TableSchema;
       const columnsSql = table.columns.map(renderColumn).join(', ');
       let sql = `CREATE TABLE ${table.name} (${columnsSql})`;
-      const pkCols = table.columns.filter(c => c.isPrimaryKey).map(c => c.name);
-      if (pkCols.length > 0) {
-        // Simple case for primary keys
-        // Note: For complex multi-column PKs or already named PKs this might need adjustment
-      }
       return [sql];
     }
     case ChangeType.DROP_TABLE:
@@ -66,7 +61,15 @@ function generateChangeSQL(change: Change, inverse: boolean): string[] {
     case ChangeType.ADD_CONSTRAINT: {
       const con = (inverse ? change.before : change.after) as Constraint;
       // Note: definition is expected to be something like "CHECK (price > 0)"
-      return [`ALTER TABLE ${change.table} ADD CONSTRAINT ${con.name} ${con.type} ${con.definition}`];
+      let typeClause = con.type;
+      if (con.type === 'PRIMARY KEY') {
+        const table = (inverse ? change.beforeTable : change.afterTable) as TableSchema;
+        const pkCols = table?.columns.filter(c => c.isPrimaryKey).map(c => c.name).join(', ');
+        if (pkCols) {
+           return [`ALTER TABLE ${change.table} ADD CONSTRAINT ${con.name} PRIMARY KEY (${pkCols})`];
+        }
+      }
+      return [`ALTER TABLE ${change.table} ADD CONSTRAINT ${con.name} ${typeClause} ${con.definition}`];
     }
     case ChangeType.DROP_CONSTRAINT:
       return [`ALTER TABLE ${change.table} DROP CONSTRAINT ${change.objectName}`];
