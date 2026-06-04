@@ -3,46 +3,53 @@ const { Pool } = pg;
 import { loadConfig } from './store.js';
 
 export interface ConnectionConfig {
-  host: string;
-  port: number;
-  database: string;
-  user: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
   password?: string;
-  ssl: boolean;
+  ssl?: boolean;
+  connectionString?: string;
 }
 
 export function getConnectionConfig(): ConnectionConfig {
-  let config: Partial<ConnectionConfig> = {};
+  const storedConfig = loadConfig();
 
-  try {
-    const storedConfig = loadConfig();
-    config = {
-      host: storedConfig.DBGIT_HOST || 'localhost',
-      port: parseInt(storedConfig.DBGIT_PORT || '5432', 10),
-      database: storedConfig.DBGIT_DATABASE,
-      user: storedConfig.DBGIT_USER,
-      password: storedConfig.DBGIT_PASSWORD,
-      ssl: storedConfig.DBGIT_SSL === 'true',
-    };
-  } catch (e) {
-    // Config not initialized yet, fall back to env vars
+  // 1. DATABASE_URL
+  if (process.env.DATABASE_URL) {
+    return { connectionString: process.env.DATABASE_URL };
   }
 
-  return {
-    host: process.env.DBGIT_HOST || config.host || 'localhost',
-    port: parseInt(process.env.DBGIT_PORT || config.port?.toString() || '5432', 10),
-    database: process.env.DBGIT_DATABASE || config.database || '',
-    user: process.env.DBGIT_USER || config.user || '',
-    password: process.env.DBGIT_PASSWORD || config.password,
-    ssl: (process.env.DBGIT_SSL === 'true') || config.ssl || false,
-  };
+  // 2. DBGIT_DATABASE_URL
+  if (process.env.DBGIT_DATABASE_URL) {
+    return { connectionString: process.env.DBGIT_DATABASE_URL };
+  }
+
+  // 3. .dbgit/config databaseUrl (if we support it there in the future, for now it might be in individual fields)
+  if (storedConfig.databaseUrl) {
+    return { connectionString: storedConfig.databaseUrl };
+  }
+
+  // 4. Legacy individual variables (Env first, then config)
+  const host = process.env.DBGIT_HOST || storedConfig.DBGIT_HOST || 'localhost';
+  const port = parseInt(process.env.DBGIT_PORT || storedConfig.DBGIT_PORT || '5432', 10);
+  const database = process.env.DBGIT_DATABASE || storedConfig.DBGIT_DATABASE || '';
+  const user = process.env.DBGIT_USER || storedConfig.DBGIT_USER || '';
+  const password = process.env.DBGIT_PASSWORD || storedConfig.DBGIT_PASSWORD;
+  const ssl = (process.env.DBGIT_SSL === 'true') || (storedConfig.DBGIT_SSL === 'true') || false;
+
+  return { host, port, database, user, password, ssl };
 }
 
 export function createPool(config: ConnectionConfig): pg.Pool {
-  if (!config.database || !config.user) {
-    throw new Error('Database name and user are required. Set DBGIT_DATABASE and DBGIT_USER env vars.');
+  if (config.connectionString) {
+    return new Pool({ connectionString: config.connectionString });
   }
-  return new Pool(config);
+
+  if (!config.database || !config.user) {
+    throw new Error('Database name and user are required. Set DATABASE_URL or individual DBGIT_* env vars.');
+  }
+  return new Pool(config as any);
 }
 
 export async function query<T>(pool: pg.Pool, sql: string, params?: unknown[]): Promise<T[]> {

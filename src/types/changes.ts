@@ -18,6 +18,8 @@ export interface Change {
   objectName?: string;
   before?: unknown;
   after?: unknown;
+  beforeTable?: unknown;
+  afterTable?: unknown;
   isDestructive: boolean;
 }
 

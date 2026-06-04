@@ -146,6 +146,7 @@ function diffConstraints(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: from.name,
         objectName: name,
         before: con,
+        beforeTable: from,
         isDestructive: false
       });
     }
@@ -159,6 +160,7 @@ function diffConstraints(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: to.name,
         objectName: name,
         after: con,
+        afterTable: to,
         isDestructive: false
       });
     } else if (JSON.stringify(fromCon) !== JSON.stringify(con)) {
@@ -167,6 +169,7 @@ function diffConstraints(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: from.name,
         objectName: name,
         before: fromCon,
+        beforeTable: from,
         isDestructive: false
       });
       changes.push({
@@ -174,6 +177,7 @@ function diffConstraints(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: to.name,
         objectName: name,
         after: con,
+        afterTable: to,
         isDestructive: false
       });
     }
@@ -191,6 +195,7 @@ function diffForeignKeys(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: from.name,
         objectName: name,
         before: fk,
+        beforeTable: from,
         isDestructive: true
       });
     }
@@ -204,6 +209,7 @@ function diffForeignKeys(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: to.name,
         objectName: name,
         after: fk,
+        afterTable: to,
         isDestructive: false
       });
     } else if (JSON.stringify(fromFk) !== JSON.stringify(fk)) {
@@ -212,6 +218,7 @@ function diffForeignKeys(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: from.name,
         objectName: name,
         before: fromFk,
+        beforeTable: from,
         isDestructive: true
       });
       changes.push({
@@ -219,6 +226,7 @@ function diffForeignKeys(from: TableSchema, to: TableSchema, changes: Change[]) 
         table: to.name,
         objectName: name,
         after: fk,
+        afterTable: to,
         isDestructive: false
       });
     }

@@ -13,5 +13,10 @@ export function loadIgnoreList(): string[] {
 }
 
 export function shouldIgnore(tableName: string, patterns: string[]): boolean {
+  if (tableName.startsWith('_dbgit_deleted_')) return true;
   return patterns.some(pattern => minimatch(tableName, pattern));
+}
+
+export function isSoftDeleted(name: string): boolean {
+  return name.startsWith('_dbgit_deleted_');
 }

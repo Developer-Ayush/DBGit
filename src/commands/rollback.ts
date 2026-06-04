@@ -1,7 +1,8 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import prompts from 'prompts';
-import { isInitialized, getHead, loadCommit, loadSnapshot, setHead, loadConfig } from '../core/store.js';
+import crypto from 'crypto';
+import { isInitialized, getHead, loadCommit, loadSnapshot, setHead, loadConfig, saveCommit, saveSnapshot, saveBranch, loadBranch } from '../core/store.js';
 import { createPool, getConnectionConfig, query } from '../core/connector.js';
 import { captureSnapshot } from '../core/snapshot.js';
 import { diffSnapshots } from '../core/differ.js';
@@ -9,10 +10,11 @@ import { validateSchemaNotDrifted } from '../core/validator.js';
 import { acquireLock, releaseLock } from '../core/schemaLock.js';
 import { createBackup } from '../core/backup.js';
 import { orderChanges } from '../core/dependencyGraph.js';
-import { generateInverseSQL } from '../core/generator.js';
+import { generateForwardSQL } from '../core/generator.js';
 import { runInTransaction } from '../core/transaction.js';
 import { loadIgnoreList } from '../core/ignore.js';
 import { ChangeType } from '../types/changes.js';
+import { Commit } from '../types/commits.js';
 
 export async function rollbackCommand(hash: string, options: { safe: boolean, force: boolean, dryRun: boolean, softDelete: boolean }) {
   if (!isInitialized()) {
@@ -39,7 +41,13 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
     const targetSnapshot = loadSnapshot(targetCommit.snapshotHash);
 
     const spinner = ora('Validating schema...').start();
-    await validateSchemaNotDrifted(pool, headCommit, ignoreList);
+    try {
+      await validateSchemaNotDrifted(pool, headCommit, ignoreList);
+    } catch (e: any) {
+      spinner.fail(chalk.red(e.message));
+      await pool.end();
+      process.exit(1);
+    }
     spinner.succeed('Schema validation passed.');
 
     const liveSnapshot = await captureSnapshot(pool, ignoreList);
@@ -56,40 +64,22 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
       for (const change of changeset.changes.filter(c => c.isDestructive)) {
         let impact = '';
         if (change.type === ChangeType.DROP_TABLE) {
-          const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM ${change.table}`);
+          const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM "${change.table}"`);
           impact = `(${rows[0].count} rows)`;
         } else if (change.type === ChangeType.DROP_COLUMN) {
-          const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM ${change.table} WHERE ${change.objectName} IS NOT NULL`);
+          const rows = await query<{ count: string }>(pool, `SELECT count(*) FROM "${change.table}" WHERE "${change.objectName}" IS NOT NULL`);
           impact = `(${rows[0].count} non-null rows)`;
         }
         console.warn(chalk.red(`  ${change.type} ${change.table}${change.objectName ? '.' + change.objectName : ''} ${impact}`));
       }
 
-      if (isProd && !options.force && !options.safe) {
-        console.error(chalk.red("\nError: Production mode. Use --safe to backup first, or --force to destroy data."));
-        process.exit(1);
-      }
-
-      if (options.force) {
-        const response = await prompts({
-          type: 'text',
-          name: 'confirm',
-          message: 'Type DESTROY DATA to continue:'
-        });
-        if (response.confirm !== 'DESTROY DATA') {
-          console.log('Rollback aborted.');
+      if (isProd) {
+        if (!options.safe) {
+          console.error(chalk.red("\nError: Production mode. Backup is mandatory for destructive operations. Use --safe."));
           process.exit(1);
         }
-      } else if (options.safe) {
-        const backupSpinner = ora('Creating backup...').start();
-        const backupPath = await createBackup(head.commit, config);
-        if (backupPath) {
-          backupSpinner.succeed(`Backup created: ${backupPath}`);
-        } else {
-          backupSpinner.warn('Backup skipped or failed.');
-        }
-      } else if (!options.force) {
-          // If not prod, still good to ask
+      } else {
+        if (!options.force && !options.safe) {
           const response = await prompts({
             type: 'confirm',
             name: 'value',
@@ -100,24 +90,46 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
             console.log('Rollback aborted.');
             process.exit(1);
           }
+        }
+      }
+
+      if (options.force && !isProd) {
+        const response = await prompts({
+          type: 'text',
+          name: 'confirm',
+          message: 'Type DESTROY DATA to continue:'
+        });
+        if (response.confirm !== 'DESTROY DATA') {
+          console.log('Rollback aborted.');
+          process.exit(1);
+        }
+      }
+
+      if (options.safe) {
+        const backupSpinner = ora('Creating backup...').start();
+        const backupPath = await createBackup(head.commit, config);
+        if (backupPath) {
+          backupSpinner.succeed(`Backup created: ${backupPath}`);
+        } else {
+          backupSpinner.warn('Backup skipped or failed.');
+        }
       }
     }
 
     const orderedChanges = orderChanges(changeset.changes, liveSnapshot);
-    let sqlStatements = generateInverseSQL({ ...changeset, changes: orderedChanges });
+    let sqlStatements = generateForwardSQL({ ...changeset, changes: orderedChanges });
 
     if (options.softDelete) {
       const timestamp = Date.now();
       sqlStatements = sqlStatements.map(sql => {
         if (sql.startsWith('DROP TABLE')) {
-          const tableName = sql.replace('DROP TABLE ', '');
-          return `ALTER TABLE ${tableName} RENAME TO _dbgit_deleted_${tableName}_${timestamp}`;
+          const tableName = sql.replace('DROP TABLE ', '').trim();
+          return `ALTER TABLE ${tableName} RENAME TO _dbgit_deleted_${tableName.replace(/"/g, '')}_${timestamp}`;
         }
         if (sql.includes('DROP COLUMN')) {
-          // ALTER TABLE table_name DROP COLUMN column_name
           const match = sql.match(/ALTER TABLE (.*) DROP COLUMN (.*)/);
           if (match) {
-            return `ALTER TABLE ${match[1]} RENAME COLUMN ${match[2]} TO _dbgit_deleted_${match[2]}_${timestamp}`;
+            return `ALTER TABLE ${match[1].trim()} RENAME COLUMN ${match[2].trim()} TO _dbgit_deleted_${match[2].trim().replace(/"/g, '')}_${timestamp}`;
           }
         }
         return sql;
@@ -136,8 +148,35 @@ export async function rollbackCommand(hash: string, options: { safe: boolean, fo
     const applySpinner = ora('Applying rollback...').start();
     try {
       await runInTransaction(pool, sqlStatements);
-      setHead({ ...head, commit: hash });
-      applySpinner.succeed(chalk.green(`Rolled back to ${hash}. Schema restored.`));
+
+      // Create a NEW commit for the rollback
+      const newCommitHash = crypto.createHash('sha256').update(Date.now().toString() + hash).digest('hex').substring(0, 7);
+
+      const rollbackCommit: Commit = {
+        commitHash: newCommitHash,
+        snapshotHash: targetCommit.snapshotHash,
+        parent: head.commit,
+        timestamp: new Date().toISOString(),
+        message: `rollback: restore schema state from ${hash.substring(0, 7)}`,
+        branch: head.branch,
+        schemaHash: targetCommit.schemaHash,
+        type: 'rollback',
+        targetCommit: hash
+      };
+
+      saveSnapshot(targetCommit.snapshotHash, targetSnapshot); // Ensure snapshot is saved for the new commit
+      saveCommit(rollbackCommit);
+
+      const newHead = { ...head, commit: newCommitHash };
+      setHead(newHead);
+
+      if (head.branch) {
+        const branch = loadBranch(head.branch);
+        branch.headCommit = newCommitHash;
+        saveBranch(branch);
+      }
+
+      applySpinner.succeed(chalk.green(`Rolled back to ${hash.substring(0, 7)}. New commit ${newCommitHash} created.`));
     } finally {
       await releaseLock(pool);
     }

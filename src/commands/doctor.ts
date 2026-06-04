@@ -1,10 +1,11 @@
 import chalk from 'chalk';
 import { isInitialized, getHead, loadCommit, loadSnapshot, loadConfig } from '../core/store.js';
-import { createPool, getConnectionConfig } from '../core/connector.js';
+import { createPool, getConnectionConfig, query } from '../core/connector.js';
 import { listBackups } from '../core/backup.js';
 import { captureSnapshot } from '../core/snapshot.js';
 import { diffSnapshots } from '../core/differ.js';
 import { computeSchemaHash } from '../core/validator.js';
+import { loadIgnoreList } from '../core/ignore.js';
 
 export async function doctorCommand() {
   console.log(chalk.bold('\nDBGit Doctor Report\n'));
@@ -13,9 +14,12 @@ export async function doctorCommand() {
   console.log(`${repoInit ? chalk.green('✓') : chalk.red('✗')} Repository initialized`);
 
   if (!repoInit) {
+    console.log(chalk.yellow('\nRecommendation:'));
+    console.log('- Run \'dbgit init\' to initialize the repository');
     process.exit(1);
   }
 
+  const ignoreList = loadIgnoreList();
   const config = getConnectionConfig();
   const pool = createPool(config);
   let dbOk = false;
@@ -30,10 +34,12 @@ export async function doctorCommand() {
   let riskScore = 0;
   const head = getHead();
   const dbConfig = loadConfig();
+  let drift = false;
+  let softDeletedCount = 0;
+  let hasPgDump = true; // We'll check this by trying to run it later if needed, but for now assume true
 
   if (dbOk) {
-    const liveHash = await computeSchemaHash(pool, []);
-    let drift = false;
+    const liveHash = await computeSchemaHash(pool, ignoreList);
     if (head.commit) {
       const lastCommit = loadCommit(head.commit);
       if (liveHash !== lastCommit.schemaHash) {
@@ -43,7 +49,7 @@ export async function doctorCommand() {
     }
     console.log(`Schema Drift:      ${drift ? chalk.red('DETECTED') : chalk.green('None')}`);
 
-    const liveSnapshot = await captureSnapshot(pool, []);
+    const liveSnapshot = await captureSnapshot(pool, ignoreList);
     let oldSnapshot = { tables: {}, capturedAt: '', schemaHash: '' };
     if (head.commit) {
       oldSnapshot = loadSnapshot(loadCommit(head.commit).snapshotHash);
@@ -53,6 +59,11 @@ export async function doctorCommand() {
     if (changeset.changes.some(c => c.isDestructive)) {
         riskScore += 30;
     }
+
+    const softDeletedTables = await query(pool, "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '_dbgit_deleted_%'");
+    const softDeletedColumns = await query(pool, "SELECT column_name FROM information_schema.columns WHERE column_name LIKE '_dbgit_deleted_%'");
+    softDeletedCount = softDeletedTables.length + softDeletedColumns.length;
+    console.log(`Soft Deleted:      ${softDeletedCount > 0 ? chalk.yellow(softDeletedCount + ' objects') : chalk.green('None')}`);
   }
 
   const backups = listBackups();
@@ -75,11 +86,36 @@ export async function doctorCommand() {
   console.log(`Risk Score:        ${riskScore}/100`);
 
   console.log(chalk.bold('\nRecommendations:'));
-  if (riskScore > 0) {
-    if (riskScore >= 40) console.log('- Run \'dbgit commit\' to snapshot current changes and resolve drift');
-    if (backups.length === 0) console.log('- Run \'dbgit rollback --safe\' on your next rollback to create a backup');
+  const recommendations: string[] = [];
+
+  if (drift) {
+    recommendations.push(chalk.yellow('- Schema Drift Detected: Run \'dbgit commit\' to capture current schema changes and resolve drift.'));
+  }
+  if (dbOk && !drift && head.commit) {
+    // Check if there are untracked changes that AREN'T drift (this shouldn't happen if drift check is correct, but good for clarity)
+  }
+  if (backups.length === 0) {
+    recommendations.push(chalk.yellow('- Missing Backups: Run \'dbgit rollback --safe\' on your next rollback to enable backup and restore support.'));
+  }
+  if (softDeletedCount > 0) {
+    recommendations.push(chalk.yellow(`- Soft Deleted Objects Exist: Run 'dbgit purge' to permanently remove ${softDeletedCount} archived objects.`));
+  }
+  if (riskScore > 50) {
+    recommendations.push(chalk.red('- Rollback Risk: High risk detected. Always use --safe before destructive rollbacks.'));
+  }
+
+  // Check for pg_dump availability
+  try {
+    const { execSync } = await import('child_process');
+    execSync('pg_dump --version', { stdio: 'ignore' });
+  } catch (e) {
+    recommendations.push(chalk.red('- Missing pg_dump: Install PostgreSQL client tools to enable safe rollback and backup functionality.'));
+  }
+
+  if (recommendations.length === 0) {
+    console.log(chalk.green('✓ Your repository is in great shape!'));
   } else {
-    console.log('Your repository is in great shape!');
+    recommendations.forEach(rec => console.log(rec));
   }
 
   console.log('');
